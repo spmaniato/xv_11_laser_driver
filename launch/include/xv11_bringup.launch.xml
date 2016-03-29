@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <node name="neato_laser_publisher" type="neato_laser_publisher"
+        pkg="xv_11_laser_driver" output="screen">
+
+      <param name="port" value="/dev/ttyO2" />
+      <param name="frame_id" value="base_laser_link" />
+      <param name="firmware_version" value="2" type="int" />
+
+  </node>
+
+</launch>
