@@ -129,7 +129,7 @@ namespace xv_11_laser_driver {
                   scan->angle_min = 0.0;
                   scan->angle_max = 2.0 * M_PI - ONE_DEGREE; // No double-count
                   scan->angle_increment = ONE_DEGREE;
-                  scan->range_min = 0.06;
+                  scan->range_min = 0.15;
                   scan->range_max = 5.0;
                   scan->ranges.resize(360);
                   scan->intensities.resize(360);
