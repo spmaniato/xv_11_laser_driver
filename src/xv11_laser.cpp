@@ -41,11 +41,12 @@ namespace xv_11_laser_driver {
   }
 
   void XV11Laser::poll(sensor_msgs::LaserScan::Ptr scan) {
-    uint8_t temp_char;
+
     uint8_t start_count = 0;
     bool got_scan = false;
 
     if(firmware_ == 1){ // This is for the old driver, the one that only outputs speed once per revolution
+      uint8_t temp_char;
       boost::array<uint8_t, 1440> raw_bytes;
       while (!shutting_down_ && !got_scan) {
     // Wait until the start sequence 0x5A, 0xA5, 0x00, 0xC0 comes around
@@ -93,7 +94,7 @@ namespace xv_11_laser_driver {
           uint8_t flag2 = (byte1 & 0x40) >> 6;  // Object too close, possible poor reading due to proximity kicks in at < 0.6m
           // Remaining bits are the range in mm
           uint16_t range = ((byte1 & 0x3F)<< 8) + byte0;
-          // Last two bytes represent the uncertanty or intensity, might also be pixel area of target...
+          // Last two bytes represent the uncertainty or intensity, might also be pixel area of target...
           uint16_t intensity = (byte3 << 8) + byte2;
 
           scan->ranges.push_back(range / 1000.0);
@@ -122,9 +123,9 @@ namespace xv_11_laser_driver {
                   // Now that entire start sequence has been found, read in the rest of the message
                   got_scan = true;
 
-                  boost::asio::read(serial_,boost::asio::buffer(&raw_bytes[2], 1978));
+                  boost::asio::read(serial_, boost::asio::buffer(&raw_bytes[2], 1978));
 
-                  float ONE_DEGREE = (2.0*M_PI/360.0);
+                  const float ONE_DEGREE = (2.0*M_PI/360.0);
 
                   scan->angle_min = 0.0;
                   scan->angle_max = 2.0 * M_PI - ONE_DEGREE; // No double-count
@@ -135,13 +136,14 @@ namespace xv_11_laser_driver {
                   scan->intensities.resize(360);
 
                   //read data in sets of 4
-                  for(uint16_t i = 0; i < raw_bytes.size(); i=i+22) {
-                      if(raw_bytes[i] == 0xFA && raw_bytes[i+1] == (0xA0+i/22)) {//&& CRC check
+                  for(uint16_t i = 0; i < raw_bytes.size(); i=i+22) { // 90 packets per revolution
+
+                      if(raw_bytes[i] == 0xFA && raw_bytes[i+1] == (0xA0+i/22)) { // && CRC checksum
                         good_sets++;
                         motor_speed += (raw_bytes[i+3] << 8) + raw_bytes[i+2]; //accumulate count for avg. time increment
                         rpms=(raw_bytes[i+3]<<8|raw_bytes[i+2])/64;
 
-                        for(uint16_t j = i+4; j < i+20; j=j+4) {
+                        for(uint16_t j = i+4; j < i+20; j=j+4) { // 4 measurements per packet
                             index = (4*i)/22 + (j-4-i)/4;
                             // Four bytes per reading
                             uint8_t byte0 = raw_bytes[j];
@@ -153,14 +155,34 @@ namespace xv_11_laser_driver {
                             // uint8_t flag2 = (byte1 & 0x40) >> 6;  // Object too close, possible poor reading due to proximity kicks in at < 0.6m
                             // Remaining bits are the range in mm
                             uint16_t range = ((byte1 & 0x3F)<< 8) + byte0;
-                            // Last two bytes represent the uncertanty or intensity, might also be pixel area of target...
+                            // Last two bytes represent the uncertainty or intensity, might also be pixel area of target...
                             uint16_t intensity = (byte3 << 8) + byte2;
 
                             scan->ranges[index] = range / 1000.0;
                             scan->intensities[index] = intensity;
                         }
+
+                    } else if (raw_bytes[i] == 0xFA && raw_bytes[i+1] == 0xA0) {
+                         std::cout << "\n<-- Unexpected start of new revolution! (0xFA, 0xA0) -->\n\n";
+
+                    } else if (i != 0 && raw_bytes[i+1] == 0xA0) {
+                        std::cout << "\nUnexpected start byte (0xA0) in packet " << (i/22 + 1) << "\n\n";
+
+                    } else {
+                        std::cout << std::showbase      // Show the 0x hex prefix
+                                  << std::internal      // Fill between the prefix and the number
+                                  << std::setfill('0'); // Fill with 0s if less than 4 digits
+
+                        std::cout << "Unexpected start (" << std::hex << std::setw(4)
+                                  << static_cast<int>(raw_bytes[i]) << ") "
+                                  << "or index (" << std::hex << std::setw(4)
+                                  << static_cast<int>(raw_bytes[i+1]) << ") "
+                                  << "in packet " << std::dec << static_cast<int>(i/22 + 1) << "\n";
                     }
                 }
+
+                std::cout << "<-- Good packets for this revolution = "
+                          << static_cast<int>(good_sets) << " / 90 -->\n";
 
                 scan->time_increment = motor_speed/good_sets/1e8;
             }
