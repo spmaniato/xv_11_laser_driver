@@ -76,9 +76,9 @@ int main(int argc, char **argv)
     laser.close();
     return 0;
   } catch (boost::system::system_error ex) {
-      ROS_ERROR("Error instantiating laser object. "
-                "Are you sure you have the correct port and baud rate? "
-                "Error was %s", ex.what());
-      return -1;
+    ROS_ERROR("Error instantiating laser object. "
+              "Are you sure you have the correct port and baud rate? "
+              "The error was: %s", ex.what());
+    return -1;
   }
 }

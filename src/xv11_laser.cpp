@@ -3,6 +3,8 @@
  *
  *  Copyright (c) 2011, Eric Perko, Chad Rockey
  *  All rights reserved.
+ *  Copyright (c) 2016, Maidbot, Inc.
+ *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions
@@ -108,7 +110,7 @@ namespace xv_11_laser_driver {
     // This is for the newer firmware that outputs packets with 4 readings each
     } else if (firmware_ == 2) {
 
-      const float ONE_DEGREE = (2.0 * M_PI / 360.0);
+      const float ONE_DEGREE = 2.0 * M_PI / 360.0;
 
       scan->angle_min = 0.0;
       scan->angle_max = 2.0 * M_PI - ONE_DEGREE; // No double-count
@@ -121,7 +123,7 @@ namespace xv_11_laser_driver {
       const uint8_t HEADER_BYTE = 0xFA;
       const uint8_t FIRST_INDEX_BYTE = 0xA0;
 
-      boost::array<uint8_t, 2100> raw_bytes; // If no errors, it would be 1980
+      boost::array<uint8_t, 1980> raw_bytes;
 
       int angle; // The index of the scan.ranges array. Ranges from 0 to 359
       uint8_t packet_index; // Second byte of a packet. Ranges from 0 to 89
@@ -141,17 +143,18 @@ namespace xv_11_laser_driver {
           }
         } else if (start_count == 1) {
           if (raw_bytes[start_count] == FIRST_INDEX_BYTE) {
-            start_count = 0;
+            start_count = 0; // NOTE: Is this actually useful?
 
-            // Now that the entire start sequence has been found,
+            // Now that the start sequence has been found (0xFA, 0xA0),
             // start reading packets until the laser scan is complete
             got_scan = true;
 
-            boost::asio::read(serial_, boost::asio::buffer(&raw_bytes[2], 1978));
+            boost::asio::read(serial_, boost::asio::buffer(&raw_bytes[2],
+                                                        raw_bytes.size() - 2));
 
             uint16_t i = 0; // Iterates over the raw byte stream
 
-            while (!shutting_down_ && (i + 22 < raw_bytes.size())) {
+            while (!shutting_down_ && (i + 22 <= raw_bytes.size())) {
 
               packet_index = (raw_bytes[i+1] - FIRST_INDEX_BYTE);
 
@@ -163,7 +166,7 @@ namespace xv_11_laser_driver {
 
                 for (uint16_t k = 2; k < 22; k++) {
 
-                  // If there is an unexpected header byte, skip this packet
+                  // If there is a premature header byte, skip this packet
                   if (raw_bytes[i+k] == HEADER_BYTE) {
                     good_packet = false;
                     i = i + k;
@@ -172,12 +175,12 @@ namespace xv_11_laser_driver {
                 }
 
                 if (good_packet) {
-                  // TODO: CRC checksum too before declaring good packet
+                  // TODO: Add CRC checksum too before declaring good packet
 
                   good_packets++;
                   // std::cout << "Good packet starting at i = " << i << "\n";
 
-                  // Accumulate count for average time increment of scan
+                  // Accumulate count for calculating average time_increment
                   motor_speed += (raw_bytes[i+3] << 8) + raw_bytes[i+2];
                   rpms = (raw_bytes[i+3]<<8 | raw_bytes[i+2]) / 64;
 
@@ -195,9 +198,9 @@ namespace xv_11_laser_driver {
 
                     // The first two bits of byte1 are status flags
                     // No return/max range/too low of reflectivity
-                    uint8_t flag1 = (byte1 & 0x80) >> 7;
+                    // uint8_t flag1 = (byte1 & 0x80) >> 7;
                     // Object too close, possible poor reading due to proximity kicks in at < 0.6m
-                    uint8_t flag2 = (byte1 & 0x40) >> 6;
+                    // uint8_t flag2 = (byte1 & 0x40) >> 6;
 
                     // Remaining bits are the range in mm
                     uint16_t range = ((byte1 & 0x3F)<< 8) + byte0;
@@ -213,7 +216,7 @@ namespace xv_11_laser_driver {
                   if (angle == 359) {
                     break; // Laser scan message is full
                   } else {
-                    i = i + 22; // Set index to start of next packet
+                    i = i + 22; // Set iteration index to start of next packet
                   }
 
                 // } else {
@@ -226,15 +229,18 @@ namespace xv_11_laser_driver {
               } else {
                 i++;
               } // End of start of packet check
-            }
+            } // End of inner while loop
 
             // std::cout << "<-- Good packets for this revolution = "
             //           << static_cast<int>(good_packets) << " / 90 -->\n";
 
             scan->time_increment = motor_speed / good_packets / 1e8;
-          }
-        }
-      }
-    }
+
+          } else {
+            start_count = 0;
+          } // End of check for frame sync, i.e., 0xFA, 0xA0
+        } //  Same^
+      } // End of outer while loop
+    } // End of firmware version 2 case
   }
 };
