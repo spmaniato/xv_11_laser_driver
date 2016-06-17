@@ -126,10 +126,10 @@ namespace xv_11_laser_driver {
       boost::array<uint8_t, 1980> raw_bytes;
 
       int angle; // The index of the scan.ranges array. Ranges from 0 to 359
-      uint8_t packet_index; // Second byte of a packet. Ranges from 0 to 89
+      uint8_t packet_index;     // Second byte of a packet. Ranges from 0 to 89
       bool good_packet;
       uint8_t good_packets = 0; // Number of good packets. Ranges from 0 to 90.
-      uint32_t motor_speed = 0;
+      int rpms_sum = 0;    // For calculating average motor speed
       rpms = 0;
 
       while (!shutting_down_ && !got_scan) {
@@ -180,9 +180,7 @@ namespace xv_11_laser_driver {
                   good_packets++;
                   // std::cout << "Good packet starting at i = " << i << "\n";
 
-                  // Accumulate count for calculating average time_increment
-                  motor_speed += (raw_bytes[i+3] << 8) + raw_bytes[i+2];
-                  rpms = (raw_bytes[i+3]<<8 | raw_bytes[i+2]) / 64;
+                  rpms_sum += (raw_bytes[i+3]<<8 | raw_bytes[i+2]) / 64;
 
                   // Iterate over the 4 measurements of this packet
                   for (uint16_t j = i+4; j < i+20; j=j+4) {
@@ -234,7 +232,15 @@ namespace xv_11_laser_driver {
             // std::cout << "<-- Good packets for this revolution = "
             //           << static_cast<int>(good_packets) << " / 90 -->\n";
 
-            scan->time_increment = motor_speed / good_packets / 1e8;
+            if (rpms_sum > 0 && good_packets > 0) {
+                rpms = rpms_sum / good_packets;
+                scan->scan_time = 60.0 / rpms;
+            } else {
+                rpms = 0.0;
+                scan->scan_time = 0.0;
+            }
+
+            scan->time_increment = scan->scan_time / 360.0;
 
           } else {
             start_count = 0;
